@@ -14,7 +14,7 @@ REQUIRED_COLS = [
     "Unitatea de învățământ",
     "Clasa",
     "Media la matematică (an școlar 2024-2025)",
-    "Nota la Bacalaureat",
+    "Nota la Bacalaureat - Matematică",
     "Profesor",
 ]
 
@@ -41,7 +41,7 @@ def as_number(series):
 # -----------------------------------------------------------
 def compute_indicators(df):
     df["Media"] = as_number(df["Media la matematică (an școlar 2024-2025)"])
-    df["Bac"] = as_number(df["Nota la Bacalaureat"])
+    df["Bac"] = as_number(df["Nota la Bacalaureat - Matematică"])
 
     nr_elevi = df["Numele și prenumele elevului"].nunique()
     medie_media = df["Media"].mean()
@@ -59,7 +59,7 @@ def plot_medii_profesori(df):
     fig, ax = plt.subplots(figsize=(8, 4))
     grouped.plot(kind="bar", ax=ax)
 
-    ax.set_title("Media la matematică vs Nota la Bacalaureat – Pe Profesor")
+    ax.set_title("Media la matematică vs Nota la Bacalaureat - Matematică – Pe Profesor")
     ax.set_ylabel("Medie")
     plt.xticks(rotation=45, ha="right")
     plt.tight_layout()
@@ -69,7 +69,7 @@ def plot_medii_profesori(df):
 # -----------------------------------------------------------
 # UI
 # -----------------------------------------------------------
-st.title("📊 Analiză: Media la matematică vs Nota la Bacalaureat – Pe Profesor")
+st.title("📊 Analiză: Media la matematică vs Nota la Bacalaureat - Matematică – Pe Profesor")
 
 with st.sidebar:
     st.header("Încărcare date")
@@ -94,7 +94,7 @@ if missing:
 
 # Pregătire valori numerice
 df["Media"] = as_number(df["Media la matematică (an școlar 2024-2025)"])
-df["Bac"] = as_number(df["Nota la Bacalaureat"])
+df["Bac"] = as_number(df["Nota la Bacalaureat - Matematică"])
 
 # Selectare profesori
 profesori = sorted(df["Profesor"].dropna().unique().tolist())
@@ -119,7 +119,7 @@ c4.metric("Progres (Bac – Media)", f"{progres:.2f}")
 st.markdown("---")
 
 # Grafic
-st.subheader("📊 Media la matematică vs Nota la Bac – pe Profesor")
+st.subheader("📊 Media la matematică vs Nota la Bacalaureat - Matematică – pe Profesor")
 st.pyplot(plot_medii_profesori(df_sel), clear_figure=True)
 
 st.markdown("---")
