@@ -1,11 +1,17 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-
-st.set_page_config(page_title="Analiză Media vs Examen – Pe Profesor", layout="wide")
+import plotly.express as px
 
 # -----------------------------------------------------------
-# Coloane necesare
+# CONFIGURARE PAGINĂ
+# -----------------------------------------------------------
+st.set_page_config(
+    page_title="Analiză Media vs Examen – Pe Profesor",
+    layout="wide"
+)
+
+# -----------------------------------------------------------
+# COLOANE NECESARE
 # -----------------------------------------------------------
 REQUIRED_COLS = [
     "Nr. crt.",
@@ -18,7 +24,7 @@ REQUIRED_COLS = [
 ]
 
 # -----------------------------------------------------------
-# Funcții helper
+# FUNCȚII
 # -----------------------------------------------------------
 @st.cache_data
 def load_excel(file, sheet_name=None):
@@ -27,161 +33,200 @@ def load_excel(file, sheet_name=None):
         df = df[list(df.keys())[0]]
     return df
 
+
 def compute_indicators(df):
     nr_elevi = df["Numele și prenumele elevului"].nunique()
-    medie_media = df["Media_numeric"].mean()
-    medie_examen = df["Examen_numeric"].mean()
-    progres = medie_examen - medie_media
-    # Rotunjire la 2 zecimale
-    medie_media = round(medie_media, 2) if pd.notna(medie_media) else 0
-    medie_examen = round(medie_examen, 2) if pd.notna(medie_examen) else 0
-    progres = round(progres, 2) if pd.notna(progres) else 0
+    medie_media = round(df["Media_numeric"].mean(), 2)
+    medie_examen = round(df["Examen_numeric"].mean(), 2)
+    progres = round((df["Examen_numeric"] - df["Media_numeric"]).mean(), 2)
     return nr_elevi, medie_media, medie_examen, progres
 
-def plot_medii_profesori(df):
-    # Grupăm pe profesor și calculăm medii
-    grouped = df.groupby("Profesor")[["Media_numeric", "Examen_numeric", "Diferenta"]].mean()
-    # Sortăm descrescător după Diferență
-    grouped = grouped.sort_values(by="Diferenta", ascending=False)
-    
-    fig, ax = plt.subplots(figsize=(10, 5))
-    grouped[["Media_numeric", "Examen_numeric"]].plot(kind="bar", ax=ax)
-    
-    ax.set_title("Media la matematică vs Nota la Examen – Pe Profesor (ordonat descrescător după Diferență)")
-    ax.set_ylabel("Medie")
-    plt.xticks(rotation=45, ha="right")
-    plt.tight_layout()
+
+def plotly_boxplot_diferenta_profesori(df):
+    ordine = (
+        df.groupby("Profesor")["Diferenta"]
+        .median()
+        .sort_values(ascending=True)
+        .index.tolist()
+    )
+
+    fig = px.box(
+        df,
+        x="Diferenta",
+        y="Profesor",
+        orientation="h",
+        category_orders={"Profesor": ordine},
+        points="outliers",
+        hover_data={
+            "Numele și prenumele elevului": True,
+            "Clasa": True,
+            "Unitatea de învățământ": True,
+            "Media_numeric": ':.2f',
+            "Examen_numeric": ':.2f',
+            "Diferenta": ':.2f',
+        },
+    )
+
+    fig.add_vline(x=0, line_dash="dash", line_color="black")
+
+    fig.update_layout(
+        title="Diferența Examen – Media la matematică (Boxplot interactiv pe Profesor)",
+        xaxis_title="Diferență (Examen – Media)",
+        yaxis_title="Profesor",
+        height=max(500, 35 * len(ordine)),
+        margin=dict(l=20, r=20, t=60, b=20),
+    )
+
     return fig
+
+
+def plotly_bar_diferenta_profesori(df):
+    grouped = df.groupby("Profesor")["Diferenta"].mean().reset_index()
+    grouped = grouped.sort_values("Diferenta", ascending=True)
+    ordine = grouped["Profesor"].tolist()
+
+    fig = px.bar(
+        grouped,
+        x="Diferenta",
+        y="Profesor",
+        orientation="h",
+        text=grouped["Diferenta"].round(2),
+        color="Diferenta",
+        color_continuous_scale=["red", "lightgray", "green"],
+        category_orders={"Profesor": ordine},
+    )
+
+    fig.add_vline(x=0, line_color="black")
+
+    fig.update_layout(
+        title="Diferența medie Examen – Media la matematică (Bar chart interactiv)",
+        xaxis_title="Diferență medie",
+        yaxis_title="Profesor",
+        height=max(500, 35 * len(grouped)),
+    )
+
+    return fig
+
 
 def color_diferenta(val):
     try:
-        val = float(val)
+        v = float(val)
     except:
         return ""
-    if val > 0:
-        color = "green"
-    elif val < 0:
-        color = "red"
-    else:
-        color = "black"
-    return f"color: {color}; font-weight: bold"
+    if v > 0:
+        return "color: green; font-weight: bold"
+    if v < 0:
+        return "color: red; font-weight: bold"
+    return "color: black; font-weight: bold"
 
 # -----------------------------------------------------------
 # UI
 # -----------------------------------------------------------
 st.title("📊 Analiză: Media la matematică vs Nota la Examen – Pe Profesor")
 
-# -----------------------------------------------------------
-# Încărcare fișier
-# -----------------------------------------------------------
 with st.sidebar:
-    st.header("Încărcare date")
-    uploaded = st.file_uploader("Încarcă fișier Excel (.xlsx)", type=["xlsx"])
+    st.header("📂 Încărcare date")
+    uploaded = st.file_uploader("Fișier Excel (.xlsx)", type=["xlsx"])
     sheet = st.text_input("Nume foaie (opțional)", "")
 
 if uploaded is None:
-    st.info("Încarcă un fișier pentru a începe.")
+    st.info("Încarcă un fișier Excel pentru a începe.")
     st.stop()
 
-sheet_arg = sheet.strip() if sheet.strip() else None
-df = load_excel(uploaded, sheet_name=sheet_arg)
+df = load_excel(uploaded, sheet.strip() or None)
 
 missing = [c for c in REQUIRED_COLS if c not in df.columns]
 if missing:
-    st.error(f"Fișierul nu are coloanele necesare: {missing}")
+    st.error(f"Lipsesc coloane obligatorii: {missing}")
     st.stop()
 
 # -----------------------------------------------------------
-# Convertim la numeric pentru calcule
+# PRELUCRARE DATE
 # -----------------------------------------------------------
-df["Media_numeric"] = pd.to_numeric(df["Media la matematică (an școlar 2024-2025)"], errors='coerce')
-df["Examen_numeric"] = pd.to_numeric(df["Nota la Examen - Matematică"], errors='coerce')
+df["Media_numeric"] = pd.to_numeric(
+    df["Media la matematică (an școlar 2024-2025)"], errors="coerce"
+)
+df["Examen_numeric"] = pd.to_numeric(
+    df["Nota la Examen - Matematică"], errors="coerce"
+)
 df["Diferenta"] = df["Examen_numeric"] - df["Media_numeric"]
-
-# Coloanele de afișare cu 2 zecimale
-df["Media_disp"] = df["Media_numeric"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "")
-df["Examen_disp"] = df["Examen_numeric"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "")
-df["Diferenta_disp"] = df["Diferenta"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "")
-
-# Nr. crt. ca int
 df["Nr. crt."] = df["Nr. crt."].astype(int)
 
+df["Media_disp"] = df["Media_numeric"].map(lambda x: f"{x:.2f}")
+df["Examen_disp"] = df["Examen_numeric"].map(lambda x: f"{x:.2f}")
+df["Diferenta_disp"] = df["Diferenta"].map(lambda x: f"{x:.2f}")
+
 # -----------------------------------------------------------
-# Selectare ȘCOLI
+# FILTRARE ȘCOLI & PROFESORI
 # -----------------------------------------------------------
 scoli = sorted(df["Unitatea de învățământ"].dropna().unique())
-select_all = st.checkbox("✅ Selectează toate școlile", value=True)
+sel_scoli = st.multiselect("🏫 Alege școlile", scoli, default=scoli)
+df = df[df["Unitatea de învățământ"].isin(sel_scoli)]
 
-if select_all:
-    sel_scoli = st.multiselect("🏫 Alege unitatea/unitățile de învățământ", scoli, default=scoli)
-else:
-    sel_scoli = st.multiselect("🏫 Alege unitatea/unitățile de învățământ", scoli, default=[])
-
-if not sel_scoli:
-    st.info("Selectează cel puțin o unitate de învățământ.")
-    st.stop()
-
-df_scoli = df[df["Unitatea de învățământ"].isin(sel_scoli)]
-
-# -----------------------------------------------------------
-# Selectare PROFESORI
-# -----------------------------------------------------------
-profesori = sorted(df_scoli["Profesor"].dropna().unique())
+profesori = sorted(df["Profesor"].dropna().unique())
 sel_profesori = st.multiselect("👨‍🏫 Alege profesorii", profesori, default=profesori)
+df_sel = df[df["Profesor"].isin(sel_profesori)]
 
-if not sel_profesori:
-    st.info("Selectează cel puțin un profesor.")
+if df_sel.empty:
+    st.warning("Nu există date pentru selecția curentă.")
     st.stop()
 
-df_sel = df_scoli[df_scoli["Profesor"].isin(sel_profesori)]
+# -----------------------------------------------------------
+# INDICATORI
+# -----------------------------------------------------------
+nr, med_m, med_e, prog = compute_indicators(df_sel)
 
-# -----------------------------------------------------------
-# Sortare crescătoare după Diferența numerică
-# -----------------------------------------------------------
-df_sel = df_sel.sort_values(by="Diferenta", ascending=True)
-
-# -----------------------------------------------------------
-# Indicatori
-# -----------------------------------------------------------
-nr_elevi, medie_med, medie_examen, progres = compute_indicators(df_sel)
-st.subheader("📌 Indicatori generali (selecția curentă)")
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Număr elevi", nr_elevi)  # int
-c2.metric("Medie la matematică", f"{medie_med:.2f}")
-c3.metric("Medie Examen", f"{medie_examen:.2f}")
-c4.metric("Progres (Examen – Media)", f"{progres:.2f}")
+c1.metric("Număr elevi", nr)
+c2.metric("Medie matematică", f"{med_m:.2f}")
+c3.metric("Medie examen", f"{med_e:.2f}")
+c4.metric("Progres", f"{prog:.2f}")
 
 st.markdown("---")
 
 # -----------------------------------------------------------
-# Grafic descrescător după Diferență
+# SELECTOR TIP GRAFIC + AFIȘARE (Bar chart implicit)
 # -----------------------------------------------------------
-st.subheader("📊 Media la matematică vs Nota la Examen – pe Profesor (ordonat descrescător după Diferență)")
-st.pyplot(plot_medii_profesori(df_sel), clear_figure=True)
+tip_grafic = st.radio(
+    "Alege tipul de grafic",
+    ["Diferență medie (bar chart)", "Boxplot diferență (opțional)"],
+    index=0,  # Bar chart implicit
+    horizontal=True
+)
+
+if tip_grafic == "Boxplot diferență (opțional)":
+    st.plotly_chart(
+        plotly_boxplot_diferenta_profesori(df_sel),
+        use_container_width=True
+    )
+else:
+    st.plotly_chart(
+        plotly_bar_diferenta_profesori(df_sel),
+        use_container_width=True
+    )
 
 st.markdown("---")
 
 # -----------------------------------------------------------
-# Tabel final
+# TABEL FINAL
 # -----------------------------------------------------------
-st.subheader("📄 Tabel elevi (sortat crescător după Diferența Examen – Media)")
+st.subheader("📄 Tabel elevi (sortat după Diferență)")
 
-display_cols = [
-    "Nr. crt.",
-    "Numele și prenumele elevului",
-    "Unitatea de învățământ",
-    "Clasa",
-    "Media_disp",
-    "Examen_disp",
-    "Profesor",
-    "Diferenta_disp"
-]
+df_sel = df_sel.sort_values("Diferenta")
 
 st.dataframe(
-    df_sel[display_cols].style.applymap(color_diferenta, subset=["Diferenta_disp"])
-    # Primele 3 coloane ~2 cm (76px)
-    .set_properties(**{'max-width':'76px', 'white-space':'nowrap'}, subset=["Nr. crt.", "Numele și prenumele elevului", "Unitatea de învățământ"])
-    # Restul compacte
-    .set_properties(**{'max-width':'50px'}, subset=["Media_disp", "Examen_disp", "Diferenta_disp"]),
+    df_sel[
+        [
+            "Nr. crt.",
+            "Numele și prenumele elevului",
+            "Unitatea de învățământ",
+            "Clasa",
+            "Media_disp",
+            "Examen_disp",
+            "Profesor",
+            "Diferenta_disp",
+        ]
+    ]
+    .style.applymap(color_diferenta, subset=["Diferenta_disp"]),
     use_container_width=True
 )
